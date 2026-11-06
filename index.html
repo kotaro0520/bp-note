@@ -1,0 +1,892 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>血圧ノート</title>
+<meta name="theme-color" content="#10292E">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="血圧ノート">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="icon-180.png">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+<style>
+/* Layout: 血圧計の表示部のような入力パネルを左に固定し、右に平均→推移→手帳形式の一覧→受診用まとめを並べる */
+:root {
+  --bg: #EDF2F1; --surface: #FBFDFC; --ink: #12302E; --muted: #4C6461; --line: #D3DEDB; --tint: #E2EBE9;
+  --accent: #0E6B69; --on-accent: #FFFFFF;
+  --am: #D0640A; --pm: #2F62CF;
+  --good: #17693F; --good-bg: #DDF1E5; --warn: #7C5A00; --warn-bg: #F7EBC8; --bad: #A5221B; --bad-bg: #FADFDC;
+  --panel: #10292E; --panel-2: #1A3A40; --panel-ink: #E2F6EF; --panel-muted: #A5C4BE; --panel-line: #33555B; --panel-on: #7FE3CF; --panel-on-ink: #0B2226;
+  --alert-bg: #FFE9E5; --alert-ink: #7A120C; --alert-line: #E2776E;
+  --font-title: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "BIZ UDPGothic", "Yu Gothic", "Noto Sans JP", sans-serif;
+  --font-body: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "BIZ UDPGothic", "Yu Gothic", "Noto Sans JP", sans-serif;
+  --font-digit: ui-monospace, "SF Mono", Menlo, "Roboto Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #0E1919; --surface: #162422; --ink: #E4EFEC; --muted: #A0B6B1; --line: #2C3F3C; --tint: #20322F;
+  --accent: #5CCBBB; --on-accent: #082120;
+  --am: #CF7120; --pm: #6490E6;
+  --good: #7FD9A5; --good-bg: #173527; --warn: #E8C766; --warn-bg: #3A2F10; --bad: #F59C94; --bad-bg: #431E1B;
+  --panel: #0A1619; --panel-2: #152A2E; --panel-line: #2E4B50;
+  --alert-bg: #431E1B; --alert-ink: #FFD6D1; --alert-line: #A8483F;
+  color-scheme: dark;
+} }
+:root[data-theme="dark"] {
+  --bg: #0E1919; --surface: #162422; --ink: #E4EFEC; --muted: #A0B6B1; --line: #2C3F3C; --tint: #20322F;
+  --accent: #5CCBBB; --on-accent: #082120;
+  --am: #CF7120; --pm: #6490E6;
+  --good: #7FD9A5; --good-bg: #173527; --warn: #E8C766; --warn-bg: #3A2F10; --bad: #F59C94; --bad-bg: #431E1B;
+  --panel: #0A1619; --panel-2: #152A2E; --panel-line: #2E4B50;
+  --alert-bg: #431E1B; --alert-ink: #FFD6D1; --alert-line: #A8483F;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 16px; line-height: 1.65;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 20px 56px; }
+.wrap { max-width: 1160px; margin-inline: auto; display: grid; gap: 20px; }
+h1, h2 { font-family: var(--font-title); font-weight: 400; text-wrap: balance; margin: 0; }
+h1 { font-size: 1.9rem; line-height: 1.2; letter-spacing: .04em; }
+h2 { font-size: 1.3rem; line-height: 1.3; }
+p { margin: 0; }
+button, input, textarea { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.panel :focus-visible { outline-color: var(--panel-on); }
+.masthead { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: baseline; justify-content: space-between; }
+.save-state { color: var(--muted); font-size: .86rem; max-width: 60ch; }
+.save-state.warn { color: var(--warn); font-weight: 700; }
+.layout { display: grid; grid-template-columns: minmax(340px, 410px) minmax(0, 1fr); gap: 24px; align-items: start; }
+.left { display: grid; gap: 16px; position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); }
+.right { display: grid; gap: 28px; min-width: 0; }
+@media (max-width: 880px) { .layout { grid-template-columns: minmax(0, 1fr); } .left { position: static; } }
+
+/* 入力パネル */
+.panel { background: var(--panel); color: var(--panel-ink); border-radius: 14px; padding: 16px; display: grid; gap: 14px; color-scheme: dark; }
+.date-row { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; gap: 6px; align-items: center; }
+.icon-btn { height: 44px; border: 1px solid var(--panel-line); background: transparent; color: var(--panel-ink); border-radius: 8px; font-size: 1.2rem; }
+.icon-btn:disabled { opacity: .35; cursor: default; }
+.date-mid { display: grid; gap: 2px; text-align: center; min-width: 0; }
+.date-mid label { font-size: .8rem; color: var(--panel-muted); }
+#f-date { background: var(--panel-2); border: 1px solid var(--panel-line); border-radius: 8px; color: var(--panel-ink); height: 44px; width: 100%; min-width: 0; padding: 0 8px; text-align: center; }
+.seg { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.seg button { min-height: 50px; border: 1px solid var(--panel-line); background: transparent; color: var(--panel-ink); border-radius: 8px; font-size: 1.1rem; font-weight: 700; }
+.seg button small { display: block; font-size: .72rem; font-weight: 400; color: var(--panel-muted); line-height: 1.2; }
+.seg button[aria-pressed="true"] { background: var(--panel-on); color: var(--panel-on-ink); border-color: var(--panel-on); }
+.seg button[aria-pressed="true"] small { color: var(--panel-on-ink); }
+.readout { display: grid; grid-template-columns: 3.1em repeat(3, minmax(0, 1fr)); gap: 6px; align-items: center; }
+.readout .h { font-size: .78rem; color: var(--panel-muted); text-align: center; line-height: 1.25; }
+.readout .h b { display: block; color: var(--panel-ink); font-size: .92rem; }
+.readout .rowlabel { font-size: .82rem; color: var(--panel-muted); }
+.digit { width: 100%; min-width: 0; height: 62px; background: var(--panel-2); border: 1px solid var(--panel-line); border-radius: 8px; color: var(--panel-ink); font-family: var(--font-digit); font-weight: 700; font-size: 2rem; text-align: center; padding: 0; font-variant-numeric: tabular-nums; }
+.digit::placeholder { color: var(--panel-muted); opacity: .45; }
+.avg-line { min-height: 1.6em; font-size: .95rem; color: var(--panel-ink); }
+.avg-line b { font-family: var(--font-digit); font-size: 1.15rem; }
+.field-label { font-size: .82rem; color: var(--panel-muted); }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { min-height: 38px; padding: 0 12px; border: 1px solid var(--panel-line); background: transparent; color: var(--panel-ink); border-radius: 19px; font-size: .9rem; }
+.chip[aria-pressed="true"] { background: var(--panel-on); color: var(--panel-on-ink); border-color: var(--panel-on); font-weight: 700; }
+.field-group { display: grid; gap: 6px; }
+.meta-row { display: grid; grid-template-columns: 9.5em minmax(0, 1fr); gap: 8px; }
+.panel input[type="text"], #f-time { height: 44px; width: 100%; min-width: 0; background: var(--panel-2); border: 1px solid var(--panel-line); color: var(--panel-ink); border-radius: 8px; padding: 0 10px; }
+.save-btn { min-height: 56px; border: 0; border-radius: 10px; background: var(--panel-on); color: var(--panel-on-ink); font-weight: 700; font-size: 1.15rem; }
+.msg { font-size: .92rem; }
+.msg:empty { display: none; }
+.msg.err { color: #FFC2BA; font-weight: 700; }
+.del-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: .9rem; }
+.text-btn { background: none; border: 0; color: var(--panel-muted); text-decoration: underline; min-height: 36px; padding: 0 4px; }
+.text-btn.danger { color: #FFC2BA; font-weight: 700; }
+.alert { background: var(--alert-bg); color: var(--alert-ink); border: 1px solid var(--alert-line); border-radius: 10px; padding: 12px; font-size: .93rem; line-height: 1.6; display: grid; gap: 4px; }
+.alert b { font-size: 1rem; }
+
+/* 測り方 */
+.howto { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 8px; font-size: .9rem; }
+.howto h2 { font-size: 1.05rem; }
+.howto dl { display: grid; grid-template-columns: 2.2em minmax(0, 1fr); gap: 4px 6px; margin: 0; }
+.howto dt { font-weight: 700; }
+.howto dd { margin: 0; }
+.howto ul { margin: 0; padding-left: 1.2em; display: grid; gap: 2px; }
+
+/* 右カラム */
+.section { display: grid; gap: 12px; min-width: 0; }
+.section-head { display: flex; flex-wrap: wrap; gap: 8px 16px; justify-content: space-between; align-items: center; }
+.period { display: inline-grid; grid-auto-flow: column; background: var(--tint); border-radius: 9px; padding: 3px; gap: 2px; }
+.period button { border: 0; background: transparent; min-height: 38px; padding: 0 14px; border-radius: 7px; color: var(--muted); font-size: .92rem; }
+.period button[aria-pressed="true"] { background: var(--surface); color: var(--ink); font-weight: 700; }
+.sample-note { background: var(--warn-bg); color: var(--warn); padding: 10px 14px; border-radius: 10px; font-size: .92rem; font-weight: 700; }
+.stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.stat { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: grid; gap: 6px; align-content: start; min-width: 0; }
+.stat-head { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+.swatch { width: 10px; height: 16px; border-radius: 3px; flex: none; }
+.swatch.am, .bar.am { background: var(--am); fill: var(--am); }
+.swatch.pm, .bar.pm { background: var(--pm); fill: var(--pm); }
+.stat-value { font-size: clamp(1.9rem, 5vw, 2.6rem); line-height: 1.1; font-weight: 700; letter-spacing: -.01em; }
+.stat-value small { font-size: .8rem; font-weight: 400; color: var(--muted); letter-spacing: 0; }
+.stat-sub { font-size: .86rem; color: var(--muted); }
+.pill { justify-self: start; display: inline-flex; gap: 5px; align-items: center; border-radius: 6px; padding: 2px 8px; font-size: .84rem; font-weight: 700; }
+.pill.good { background: var(--good-bg); color: var(--good); }
+.pill.above { background: var(--warn-bg); color: var(--warn); }
+.pill.high { background: var(--bad-bg); color: var(--bad); }
+.pill.none { background: var(--tint); color: var(--muted); }
+.guidance { max-width: 65ch; }
+.chart-card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 12px 12px 6px; display: grid; gap: 6px; min-width: 0; position: relative; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .86rem; color: var(--muted); align-items: center; }
+.legend span { display: inline-flex; gap: 6px; align-items: center; }
+.legend .key-target { width: 16px; height: 0; border-top: 2px solid var(--good); }
+#chart { position: relative; width: 100%; min-width: 0; touch-action: pan-y; }
+#chart svg { display: block; width: 100%; height: auto; }
+.axis-text { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; font-family: var(--font-body); }
+.grid { stroke: var(--line); stroke-width: 1; }
+.tick { stroke: var(--muted); stroke-width: 1; }
+.target-line { stroke: var(--good); stroke-width: 1.5; }
+.target-text { fill: var(--good); font-size: 11px; font-weight: 700; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; font-family: var(--font-body); }
+.col-hl { fill: var(--tint); }
+.tip { position: absolute; z-index: 3; pointer-events: none; background: var(--ink); color: var(--bg); padding: 8px 10px; border-radius: 8px; font-size: .84rem; line-height: 1.5; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tip b { display: block; }
+
+/* 手帳の表 */
+.table-scroll { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-size: .8rem; font-weight: 700; color: var(--muted); padding: 8px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 0 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+tr.memo-row td { padding: 0 10px 8px; font-size: .84rem; color: var(--muted); }
+tr.has-memo td { border-bottom: 0; }
+tr:last-child td { border-bottom: 0; }
+.day-cell { white-space: nowrap; font-size: .92rem; padding-block: 6px; }
+.day-cell .dow { color: var(--muted); font-size: .8rem; }
+.cell-btn { display: flex; flex-direction: column; justify-content: center; width: 100%; min-height: 50px; padding: 4px 0; background: none; border: 0; text-align: left; line-height: 1.3; }
+.cell-btn:disabled { cursor: default; }
+.cell-btn .bp { font-weight: 700; font-size: 1.05rem; white-space: nowrap; }
+.cell-btn .sub { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+.cell-btn.empty { color: var(--muted); font-size: .85rem; }
+.mark { color: var(--bad); font-size: .78rem; margin-left: 2px; }
+.empty-note { padding: 18px 16px; color: var(--muted); }
+.table-note { font-size: .84rem; color: var(--muted); }
+
+/* 受診用 */
+.summary-box { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-body); font-size: .93rem; line-height: 1.7; margin: 0; user-select: text; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.btn { min-height: 46px; padding: 0 18px; border-radius: 9px; border: 1px solid var(--accent); background: var(--accent); color: var(--on-accent); font-weight: 700; }
+.btn.ghost { background: transparent; color: var(--accent); }
+.btn:disabled { opacity: .45; cursor: default; }
+.file-btn { display: inline-flex; align-items: center; cursor: pointer; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+#csv-in:focus-visible + * , #csv-in:focus-visible { outline: 3px solid var(--accent); }
+details.settings { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 0 16px; }
+details.settings summary { cursor: pointer; min-height: 48px; display: flex; align-items: center; font-weight: 700; }
+.settings-body { display: grid; gap: 12px; padding-bottom: 16px; }
+.settings-body label { display: grid; gap: 4px; font-size: .88rem; color: var(--muted); }
+.settings-body input { height: 44px; width: 100%; min-width: 0; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; color: var(--ink); }
+.target-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+footer { font-size: .84rem; color: var(--muted); display: grid; gap: 6px; max-width: 75ch; }
+footer a { color: var(--accent); }
+@media (max-width: 420px) { .digit { font-size: 1.7rem; height: 58px; } .stat { padding: 12px; } td, th { padding-inline: 8px; } }
+@media (prefers-reduced-motion: no-preference) { .seg button, .chip, .period button { transition: background-color .12s; } }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <h1>血圧ノート</h1>
+    <p class="save-state" id="save-state" role="status">保存先を確認しています</p>
+  </header>
+
+  <div class="layout">
+    <div class="left">
+      <form class="panel" id="entry" novalidate autocomplete="off">
+        <div class="date-row">
+          <button type="button" class="icon-btn" id="d-prev" aria-label="前の日">‹</button>
+          <div class="date-mid"><label for="f-date" id="date-label">今日</label><input type="date" id="f-date"></div>
+          <button type="button" class="icon-btn" id="d-next" aria-label="次の日">›</button>
+        </div>
+        <div class="seg" role="group" aria-label="朝か晩か">
+          <button type="button" id="s-am" aria-pressed="true">朝<small id="s-am-state">未記録</small></button>
+          <button type="button" id="s-pm" aria-pressed="false">晩<small id="s-pm-state">未記録</small></button>
+        </div>
+        <div class="readout">
+          <span></span>
+          <span class="h"><b>上</b>mmHg</span><span class="h"><b>下</b>mmHg</span><span class="h"><b>脈拍</b>回/分</span>
+          <span class="rowlabel">1回目</span>
+          <input class="digit" id="r0-s" inputmode="numeric" maxlength="3" placeholder="---" aria-label="1回目 上の血圧">
+          <input class="digit" id="r0-d" inputmode="numeric" maxlength="3" placeholder="---" aria-label="1回目 下の血圧">
+          <input class="digit" id="r0-p" inputmode="numeric" maxlength="3" placeholder="---" aria-label="1回目 脈拍">
+          <span class="rowlabel">2回目</span>
+          <input class="digit" id="r1-s" inputmode="numeric" maxlength="3" placeholder="---" aria-label="2回目 上の血圧">
+          <input class="digit" id="r1-d" inputmode="numeric" maxlength="3" placeholder="---" aria-label="2回目 下の血圧">
+          <input class="digit" id="r1-p" inputmode="numeric" maxlength="3" placeholder="---" aria-label="2回目 脈拍">
+        </div>
+        <p class="avg-line" id="avg-line" aria-live="polite">1回目だけでも保存できます。</p>
+        <div class="alert" id="alert" role="alert" hidden></div>
+        <div class="field-group">
+          <span class="field-label">今日の様子（当てはまるものだけ）</span>
+          <div class="chips" id="chips"></div>
+        </div>
+        <div class="meta-row">
+          <div class="field-group"><label class="field-label" for="f-time">時刻</label><input type="time" id="f-time"></div>
+          <div class="field-group"><label class="field-label" for="f-memo">メモ</label><input type="text" id="f-memo" maxlength="200" placeholder="例）夜勤明け、新しい薬を開始"></div>
+        </div>
+        <button type="submit" class="save-btn" id="save-btn">朝の血圧を保存</button>
+        <p class="msg" id="msg" role="status"></p>
+        <div class="del-row" id="del-row" hidden>
+          <button type="button" class="text-btn" id="del-ask">この記録を削除</button>
+          <span id="del-confirm" hidden>本当に削除しますか？
+            <button type="button" class="text-btn danger" id="del-yes">削除する</button>
+            <button type="button" class="text-btn" id="del-no">やめる</button>
+          </span>
+        </div>
+      </form>
+
+      <section class="howto" aria-labelledby="howto-h">
+        <h2 id="howto-h">正しく測るために</h2>
+        <dl>
+          <dt>朝</dt><dd>起きて1時間以内。トイレのあと、朝の薬と朝食の前。</dd>
+          <dt>晩</dt><dd>寝る前。</dd>
+        </dl>
+        <ul>
+          <li>背もたれのある椅子に脚を組まずに座り、1〜2分安静にしてから測る</li>
+          <li>腕帯（カフ）は心臓の高さに。測定中は話さない</li>
+          <li>測る前のたばこ、お酒、カフェインは避ける</li>
+          <li>1回の機会に2回測り、平均を記録する（1回だけならその値）</li>
+        </ul>
+      </section>
+    </div>
+
+    <main class="right">
+      <section class="section" aria-labelledby="sum-h">
+        <div class="section-head">
+          <h2 id="sum-h">平均と推移</h2>
+          <div class="period" role="group" aria-label="表示する期間">
+            <button type="button" data-days="7" aria-pressed="true">7日</button>
+            <button type="button" data-days="28" aria-pressed="false">4週</button>
+            <button type="button" data-days="84" aria-pressed="false">12週</button>
+          </div>
+        </div>
+        <p class="sample-note" id="sample-note" hidden>これは見本のデータです。最初の記録を保存すると、見本は消えて自分の記録に切り替わります。</p>
+        <div class="stats" id="stats"></div>
+        <p class="guidance" id="guidance"></p>
+        <div class="chart-card">
+          <div class="legend" id="legend">
+            <span><i class="swatch am"></i>朝</span>
+            <span><i class="swatch pm"></i>晩</span>
+            <span><i class="key-target"></i><span id="legend-target">目標</span></span>
+            <span id="legend-note">棒の上端が上の血圧、下端が下の血圧</span>
+          </div>
+          <div id="chart" tabindex="0" role="img" aria-label="血圧の推移グラフ"></div>
+        </div>
+      </section>
+
+      <section class="section" aria-labelledby="book-h">
+        <div class="section-head"><h2 id="book-h">血圧手帳</h2><span class="table-note">数値を押すと修正できます。▲は135/85以上。</span></div>
+        <div class="table-scroll" id="book"></div>
+      </section>
+
+      <section class="section" aria-labelledby="doc-h">
+        <div class="section-head"><h2 id="doc-h">受診用まとめ</h2><span class="table-note">上で選んだ期間をまとめます</span></div>
+        <pre class="summary-box" id="summary"></pre>
+        <div class="actions">
+          <button type="button" class="btn" id="copy-btn">まとめをコピー</button>
+          <button type="button" class="btn ghost" id="csv-btn">全記録をCSVで保存</button>
+          <label class="btn ghost file-btn" for="csv-in">CSVから読み込む</label>
+          <input type="file" id="csv-in" accept=".csv,text/csv" class="visually-hidden">
+          <span class="table-note" id="action-msg" role="status"></span>
+        </div>
+        <details class="settings">
+          <summary>名前、目標値、薬の設定</summary>
+          <div class="settings-body">
+            <label for="set-name">名前（まとめに載せる場合）<input type="text" id="set-name" maxlength="40"></label>
+            <label for="set-meds">飲んでいる薬（まとめに載せる場合）<input type="text" id="set-meds" maxlength="120"></label>
+            <div class="target-grid">
+              <label for="set-ts">家庭血圧の目標 上<input type="number" inputmode="numeric" id="set-ts" min="100" max="160"></label>
+              <label for="set-td">家庭血圧の目標 下<input type="number" inputmode="numeric" id="set-td" min="60" max="100"></label>
+            </div>
+            <p class="table-note">初期値は125/75未満です。主治医から別の目標を指示されたら、その値に変更してください。</p>
+          </div>
+        </details>
+      </section>
+
+      <footer>
+        <p>判定の目安は「高血圧管理・治療ガイドライン2025」に基づきます。このノートは診断をしません。数値だけで薬をやめたり増減したりせず、主治医に相談してください。</p>
+        <p>参照：<a href="https://www.city.sendai.jp/hokennenkin-kanri/ketsuatsu.html" target="_blank" rel="noopener">仙台市「家庭血圧の測り方」</a>、<a href="https://www.carenet.com/news/general/carenet/61350" target="_blank" rel="noopener">CareNet「JSH2025」解説</a>、<a href="https://www.msdmanuals.com/ja-jp/professional/04-%E5%BF%83%E8%A1%80%E7%AE%A1%E7%96%BE%E6%82%A3/%E9%AB%98%E8%A1%80%E5%9C%A7/%E9%AB%98%E8%A1%80%E5%9C%A7%E7%B7%8A%E6%80%A5%E7%97%87" target="_blank" rel="noopener">MSDマニュアル「高血圧緊急症」</a></p>
+      </footer>
+    </main>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  var HIGH = { s: 135, d: 85 }, DEFAULT_TARGET = { s: 125, d: 75 }, MIN_DAYS = 5;
+  var TAGS = ['薬を飲んだ', '飲酒', '睡眠不足', '運動', '塩分多め', 'ストレス', '頭痛', 'めまい', '動悸'];
+  var SLOT = { am: '朝', pm: '晩' }, DOW = ['日', '月', '火', '水', '木', '金', '土'];
+  var KEY = 'bpnote.v1';
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+
+  /* ---------- 日付 ---------- */
+  function pad(n) { return String(n).padStart(2, '0'); }
+  function ymd(d) { return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()); }
+  function parse(s) { var p = s.split('-').map(Number); return new Date(p[0], p[1] - 1, p[2]); }
+  function addDays(s, n) { var d = parse(s); d.setDate(d.getDate() + n); return ymd(d); }
+  function today() { return ymd(new Date()); }
+  function md(s) { var d = parse(s); return (d.getMonth() + 1) + '/' + d.getDate(); }
+  function dow(s) { return DOW[parse(s).getDay()]; }
+  function nowTime() { var d = new Date(); return pad(d.getHours()) + ':' + pad(d.getMinutes()); }
+  function recId(date, slot) { return 'r_' + date + '_' + slot; }
+
+  /* ---------- 計算 ---------- */
+  function mean(a) { return a.reduce(function (x, y) { return x + y; }, 0) / a.length; }
+  function occasion(rec) {
+    var r = (rec.r || []).filter(function (x) { return x && x.s && x.d; });
+    if (!r.length) return null;
+    var ps = r.map(function (x) { return x.p; }).filter(Boolean);
+    return { s: Math.round(mean(r.map(function (x) { return x.s; }))), d: Math.round(mean(r.map(function (x) { return x.d; }))), p: ps.length ? Math.round(mean(ps)) : null, n: r.length };
+  }
+  function judge(s, d, t) {
+    if (s >= Math.max(HIGH.s, t.s) || d >= Math.max(HIGH.d, t.d)) return 'high';
+    if (s >= t.s || d >= t.d) return 'above';
+    return 'good';
+  }
+  function periodRecs(recs, days, endDate) {
+    var from = addDays(endDate, -days + 1);
+    return Object.keys(recs).map(function (k) { return recs[k]; }).filter(function (r) { return r.date >= from && r.date <= endDate; });
+  }
+  function slotStats(list, slot, target) {
+    var occ = list.filter(function (r) { return r.slot === slot; }).map(occasion).filter(Boolean);
+    if (!occ.length) return { n: 0 };
+    var ps = occ.map(function (o) { return o.p; }).filter(Boolean);
+    var s = Math.round(mean(occ.map(function (o) { return o.s; }))), d = Math.round(mean(occ.map(function (o) { return o.d; })));
+    return { n: occ.length, s: s, d: d, p: ps.length ? Math.round(mean(ps)) : null,
+      maxS: Math.max.apply(null, occ.map(function (o) { return o.s; })), maxD: Math.max.apply(null, occ.map(function (o) { return o.d; })),
+      state: judge(s, d, target) };
+  }
+
+  /* ---------- 状態と保存 ---------- */
+  var S = { recs: {}, pending: {}, settings: { name: '', meds: '', ts: DEFAULT_TARGET.s, td: DEFAULT_TARGET.d }, settingsDirty: false,
+    days: 7, date: today(), slot: new Date().getHours() < 14 ? 'am' : 'pm', dirty: false, mode: 'checking', hover: -1 };
+  var coll = null, flushing = false, sampleCache = null;
+  try {
+    var saved = JSON.parse(localStorage.getItem(KEY) || 'null');
+    if (saved) { S.recs = saved.recs || {}; S.pending = saved.pending || {}; if (saved.settings) S.settings = saved.settings; S.settingsDirty = !!saved.settingsDirty; }
+  } catch (e) { /* 保存領域が使えないときは今回の表示のみ */ }
+  function persist() { try { localStorage.setItem(KEY, JSON.stringify({ recs: S.recs, pending: S.pending, settings: S.settings, settingsDirty: S.settingsDirty })); } catch (e) { /* 無視 */ } }
+  function target() { return { s: Number(S.settings.ts) || DEFAULT_TARGET.s, d: Number(S.settings.td) || DEFAULT_TARGET.d }; }
+  function hasReal() { return Object.keys(S.recs).length > 0; }
+
+  function sampleRecs() {
+    if (sampleCache && sampleCache.day === today()) return sampleCache.recs;
+    var out = {}, t = today(), seed = 11;
+    function rnd(n) { seed = (seed * 9301 + 49297) % 233280; return Math.floor(seed / 233280 * n); }
+    for (var i = 27; i >= 0; i--) {
+      var date = addDays(t, -i), drift = Math.round((27 - i) * -0.25);
+      out[recId(date, 'am')] = { date: date, slot: 'am', time: '06:50', r: [{ s: 133 + drift + rnd(9), d: 84 + Math.round(drift / 2) + rnd(6), p: 62 + rnd(8) }], tags: [], memo: '' };
+      if (i % 6 !== 2) out[recId(date, 'pm')] = { date: date, slot: 'pm', time: '22:40', r: [{ s: 123 + drift + rnd(9), d: 76 + Math.round(drift / 2) + rnd(6), p: 60 + rnd(8) }], tags: [], memo: '' };
+    }
+    sampleCache = { day: t, recs: out };
+    return out;
+  }
+  function viewRecs() { return hasReal() ? S.recs : sampleRecs(); }
+
+  function setSaveState() {
+    var el = $('save-state'), n = Object.keys(S.pending).length;
+    el.classList.remove('warn');
+    if (S.mode === 'synced') el.textContent = n ? '保存しています' : 'アカウントに保存済み。同じアカウントの別の端末でも見られます。';
+    else if (S.mode === 'offline') { el.classList.add('warn'); el.textContent = '接続できないため、この端末に一時保存しています。接続が戻ると自動で同期します。'; }
+    else if (S.mode === 'local') { el.classList.add('warn'); el.textContent = 'この端末のブラウザーにだけ保存しています。消えると戻せないので、ときどきCSVで保存してください。'; }
+    else if (S.mode === 'device') el.textContent = '通信なしで使えます。記録はこのスマホの中にだけ保存されます。ときどき「全記録をCSVで保存」でバックアップしてください。';
+    else el.textContent = '保存先を確認しています';
+  }
+  async function flush() {
+    if (!coll || flushing) return;
+    flushing = true;
+    try {
+      var ids = Object.keys(S.pending);
+      for (var i = 0; i < ids.length; i++) {
+        var id = ids[i], val = S.pending[id];
+        if (val) await coll.doc(id).set(val); else await coll.doc(id).delete();
+        if (S.pending[id] === val) delete S.pending[id];
+      }
+      if (S.settingsDirty) { var sv = S.settings; await coll.doc('settings').set(sv); if (S.settings === sv) S.settingsDirty = false; }
+      S.mode = 'synced';
+    } catch (e) {
+      S.mode = e && (e.code === 'invalid_argument' || e.code === 'revoked' || e.code === 'not_granted') ? 'local' : 'offline';
+      if (e && e.code === 'invalid_argument') coll = null;
+      if (S.mode === 'offline') setTimeout(flush, 8000 + Math.random() * 4000);
+    }
+    flushing = false;
+    persist(); setSaveState();
+    if (coll && (Object.keys(S.pending).length || S.settingsDirty) && S.mode === 'synced') flush();
+  }
+  async function connect() {
+    if (!window.claude || !window.claude.use) { S.mode = 'local'; setSaveState(); return; }
+    var db = await window.claude.use('db'), user = await window.claude.use('user');
+    var uid = user && user.id ? await user.id() : null;
+    if (!db || !uid) { S.mode = 'local'; setSaveState(); return; }
+    coll = db.collection('data/users/' + uid);
+    var waited = setTimeout(function () { if (S.mode === 'checking') { S.mode = 'offline'; setSaveState(); } }, 10000);
+    var flushed = false;
+    coll.onSnapshot(function (snap) {
+      if (!snap.metadata.fromCache) { clearTimeout(waited); if (S.mode !== 'local') S.mode = 'synced'; }
+      var next = {};
+      snap.docs.forEach(function (doc) {
+        if (doc.id === 'settings') { if (!S.settingsDirty) S.settings = Object.assign({}, S.settings, doc.data()); }
+        else if (doc.id.indexOf('r_') === 0) next[doc.id] = doc.data();
+      });
+      if (!snap.metadata.fromCache || Object.keys(next).length) {
+        Object.keys(S.pending).forEach(function (id) { if (S.pending[id]) next[id] = S.pending[id]; else delete next[id]; });
+        S.recs = next; persist();
+      }
+      fillSettings(); renderData();
+      if (!S.dirty) loadForm(); else renderSlotStates();
+      setSaveState();
+      if (!snap.metadata.fromCache && !flushed) { flushed = true; flush(); }
+    }, function (e) {
+      clearTimeout(waited); coll = null;
+      S.mode = e && e.code === 'revoked' ? 'local' : 'offline'; setSaveState();
+    });
+  }
+
+  /* ---------- 入力フォーム ---------- */
+  var FIELDS = ['r0-s', 'r0-d', 'r0-p', 'r1-s', 'r1-d', 'r1-p'];
+  var chipsEl = $('chips');
+  TAGS.forEach(function (t) {
+    var b = document.createElement('button');
+    b.type = 'button'; b.className = 'chip'; b.textContent = t; b.setAttribute('aria-pressed', 'false'); b.dataset.tag = t;
+    chipsEl.appendChild(b);
+  });
+  chipsEl.addEventListener('click', function (e) {
+    var b = e.target.closest('.chip'); if (!b) return;
+    b.setAttribute('aria-pressed', b.getAttribute('aria-pressed') === 'true' ? 'false' : 'true'); S.dirty = true;
+  });
+
+  function setTags(tags) { chipsEl.querySelectorAll('.chip').forEach(function (b) { b.setAttribute('aria-pressed', tags.indexOf(b.dataset.tag) >= 0 ? 'true' : 'false'); }); }
+  function getTags() { return Array.prototype.filter.call(chipsEl.querySelectorAll('.chip'), function (b) { return b.getAttribute('aria-pressed') === 'true'; }).map(function (b) { return b.dataset.tag; }); }
+
+  function renderSlotStates() {
+    ['am', 'pm'].forEach(function (sl) {
+      var rec = S.recs[recId(S.date, sl)], o = rec && occasion(rec);
+      $('s-' + sl).setAttribute('aria-pressed', S.slot === sl ? 'true' : 'false');
+      $('s-' + sl + '-state').textContent = o ? '記録済 ' + o.s + '/' + o.d : '未記録';
+    });
+    var isToday = S.date === today();
+    $('date-label').textContent = isToday ? '今日' : (S.date === addDays(today(), -1) ? '昨日' : dow(S.date) + '曜日');
+    $('f-date').value = S.date; $('f-date').max = today();
+    $('d-next').disabled = isToday;
+    var exists = !!S.recs[recId(S.date, S.slot)];
+    $('save-btn').textContent = SLOT[S.slot] + 'の血圧を' + (exists ? '更新' : '保存');
+    $('del-row').hidden = !exists;
+    if (!exists) $('del-confirm').hidden = true;
+    $('del-ask').hidden = !$('del-confirm').hidden;
+  }
+  function loadForm(keepValues) {
+    var rec = S.recs[recId(S.date, S.slot)];
+    if (!keepValues || rec) {
+      FIELDS.forEach(function (f, i) {
+        var r = rec && rec.r && rec.r[i < 3 ? 0 : 1], k = 'sdp'[i % 3];
+        $(f).value = r && r[k] ? r[k] : '';
+      });
+      setTags(rec ? rec.tags || [] : []);
+      $('f-memo').value = rec ? rec.memo || '' : '';
+      S.dirty = false;
+    }
+    if (rec) $('f-time').value = rec.time || '';
+    else if (!keepValues) $('f-time').value = S.date === today() ? nowTime() : '';
+    renderSlotStates(); updateLive();
+  }
+  function num(id) { var v = $(id).value.trim(); return v === '' ? null : Number(v); }
+  function readRows() {
+    var rows = [], err = null;
+    [0, 1].forEach(function (i) {
+      var s = num('r' + i + '-s'), d = num('r' + i + '-d'), p = num('r' + i + '-p'), label = (i + 1) + '回目';
+      if (s === null && d === null && p === null) return;
+      if (s === null || d === null) { err = err || label + 'の上と下の両方を入力してください。'; return; }
+      if (s < 60 || s > 280) { err = err || label + 'の上は60〜280の範囲で入力してください。'; return; }
+      if (d < 30 || d > 180) { err = err || label + 'の下は30〜180の範囲で入力してください。'; return; }
+      if (d >= s) { err = err || label + 'は上より下が低くなるように入力してください。'; return; }
+      if (p !== null && (p < 30 || p > 220)) { err = err || label + 'の脈拍は30〜220の範囲で入力してください。'; return; }
+      rows[i] = { s: s, d: d, p: p };
+    });
+    return { rows: rows, err: err };
+  }
+  function alertHtml(o) {
+    if (o.s >= 180 || o.d >= 120) return '<b>かなり高い値です（' + o.s + '/' + o.d + '）</b><span>胸の痛み、息苦しさ、手足のまひやしびれ、ろれつが回らない、見え方の異常、激しい頭痛、意識がぼんやりするなどがあれば、すぐ119番に電話してください。</span><span>症状がなければ、1〜2分座って静かにしてから測り直してください。それでも同じ高さなら、できるだけ早く医療機関へ連絡してください。迷うときは #7119（救急相談、実施地域のみ）へ。</span>';
+    if (o.s < 90) return '<b>低めの値です（' + o.s + '/' + o.d + '）</b><span>測り直してください。ふらつき、冷や汗、気が遠くなる感じなどがあれば、医療機関に相談してください。</span>';
+    if (o.p && (o.p < 50 || o.p >= 120)) return '<b>脈拍が' + (o.p < 50 ? '少なめ' : '多め') + 'です（' + o.p + '回/分）</b><span>安静にして測り直してください。続くときや、動悸、息切れ、ふらつきがあれば、医療機関に相談してください。</span>';
+    return '';
+  }
+  var STATE_LABEL = { good: '● 目標の範囲内', above: '▲ 目標より高め', high: '■ 135/85以上' };
+  function updateLive() {
+    var res = readRows(), rows = res.rows.filter(Boolean), line = $('avg-line'), al = $('alert');
+    if (!rows.length || res.err) { line.textContent = rows.length ? '' : '1回目だけでも保存できます。'; al.hidden = true; return; }
+    var o = occasion({ r: rows });
+    var st = STATE_LABEL[judge(o.s, o.d, target())];
+    line.innerHTML = (rows.length > 1 ? '2回の平均 ' : '') + '<b>' + o.s + '/' + o.d + '</b>' + (o.p ? ' 脈 <b>' + o.p + '</b>' : '') + '　' + esc(st);
+    var html = alertHtml(o);
+    al.innerHTML = html; al.hidden = !html;
+  }
+  function advance(el) {
+    var v = el.value, idx = FIELDS.indexOf(el.id);
+    if (idx < 0 || idx === FIELDS.length - 1) return;
+    /* 3桁、または40以上の2桁で次へ（1から始まる値は3桁を待つ） */
+    if (v.length === 3 || (v.length === 2 && Number(v) >= 40)) {
+      if (idx === 2) return; /* 1回目の脈拍の後は自動で移動しない（1回だけの人が多いため） */
+      $(FIELDS[idx + 1]).focus();
+    }
+  }
+  FIELDS.forEach(function (f) {
+    var el = $(f);
+    el.addEventListener('input', function (e) {
+      el.value = el.value.replace(/[^0-9]/g, '');
+      S.dirty = true; $('msg').textContent = ''; $('msg').className = 'msg';
+      updateLive();
+      if (e.inputType && e.inputType.indexOf('delete') === 0) return;
+      advance(el);
+    });
+    el.addEventListener('focus', function () { el.select(); });
+  });
+  ['f-memo', 'f-time'].forEach(function (id) { $(id).addEventListener('input', function () { S.dirty = true; }); });
+
+  function goTo(date, slot) {
+    S.date = date; S.slot = slot;
+    $('msg').textContent = ''; $('msg').className = 'msg'; $('del-confirm').hidden = true;
+    loadForm(S.dirty);
+  }
+  $('s-am').addEventListener('click', function () { goTo(S.date, 'am'); });
+  $('s-pm').addEventListener('click', function () { goTo(S.date, 'pm'); });
+  $('d-prev').addEventListener('click', function () { goTo(addDays(S.date, -1), S.slot); });
+  $('d-next').addEventListener('click', function () { if (S.date < today()) goTo(addDays(S.date, 1), S.slot); });
+  $('f-date').addEventListener('change', function () { var v = $('f-date').value; if (v && v <= today()) goTo(v, S.slot); else renderSlotStates(); });
+
+  $('entry').addEventListener('submit', function (e) {
+    e.preventDefault();
+    var res = readRows(), msg = $('msg');
+    if (res.err) { msg.textContent = res.err; msg.className = 'msg err'; return; }
+    var rows = [res.rows[0], res.rows[1]].filter(Boolean);
+    if (!rows.length) { msg.textContent = '1回目の上と下を入力してください。'; msg.className = 'msg err'; $('r0-s').focus(); return; }
+    var id = recId(S.date, S.slot), updated = !!S.recs[id];
+    var rec = { date: S.date, slot: S.slot, time: $('f-time').value || '', r: rows, tags: getTags(), memo: $('f-memo').value.trim(), updatedAt: Date.now() };
+    S.recs[id] = rec; S.pending[id] = rec; S.dirty = false;
+    persist(); renderData(); loadForm();
+    var o = occasion(rec);
+    msg.textContent = SLOT[S.slot] + 'の血圧 ' + o.s + '/' + o.d + ' を' + (updated ? '更新' : '保存') + 'しました。'; msg.className = 'msg';
+    setSaveState(); flush();
+  });
+  $('del-ask').addEventListener('click', function () { $('del-confirm').hidden = false; $('del-ask').hidden = true; });
+  $('del-no').addEventListener('click', function () { $('del-confirm').hidden = true; $('del-ask').hidden = false; });
+  $('del-yes').addEventListener('click', function () {
+    var id = recId(S.date, S.slot);
+    delete S.recs[id]; S.pending[id] = null; S.dirty = false;
+    $('del-confirm').hidden = true; persist(); renderData(); loadForm();
+    $('msg').textContent = '記録を削除しました。'; $('msg').className = 'msg';
+    setSaveState(); flush();
+  });
+
+  /* ---------- 平均 ---------- */
+  function statHtml(slot, st) {
+    var head = '<div class="stat-head"><i class="swatch ' + slot + '"></i>' + SLOT[slot] + 'の平均</div>';
+    if (!st.n) return '<div class="stat">' + head + '<div class="stat-value">--/--</div><span class="pill none">記録なし</span></div>';
+    var short = st.n < MIN_DAYS;
+    var pill = short ? '<span class="pill none">○ ' + st.n + '日分（参考）</span>' : '<span class="pill ' + st.state + '">' + STATE_LABEL[st.state] + '</span>';
+    return '<div class="stat">' + head + '<div class="stat-value">' + st.s + '/' + st.d + ' <small>mmHg</small></div>' + pill +
+      '<div class="stat-sub">' + st.n + '日分' + (st.p ? '・脈拍 ' + st.p : '') + '・最高 ' + st.maxS + '/' + st.maxD + '</div></div>';
+  }
+  function guidance(am, pm, t) {
+    var ok = [am, pm].filter(function (x) { return x.n >= MIN_DAYS; });
+    if (!ok.length) {
+      var best = Math.max(am.n || 0, pm.n || 0);
+      return '判定には5日以上の平均を使います。あと' + (MIN_DAYS - best) + '日分で目安が出ます。';
+    }
+    if (ok.some(function (x) { return x.state === 'high'; })) return '朝か晩の平均が135/85以上です。かかりつけの医師に相談してください。受診がまだなら、このまとめを持って受診してください。';
+    if (ok.some(function (x) { return x.state === 'above'; })) return '目標の' + t.s + '/' + t.d + '未満より少し高めです。記録を続け、次の受診で見せてください。';
+    return '朝も晩も目標の' + t.s + '/' + t.d + '未満です。この調子で記録を続けてください。';
+  }
+
+  /* ---------- グラフ ---------- */
+  var chartBuckets = [];
+  function buckets(recs, days) {
+    var end = today(), out = [];
+    function val(list) {
+      var occ = list.map(occasion).filter(Boolean);
+      if (!occ.length) return null;
+      var ps = occ.map(function (o) { return o.p; }).filter(Boolean);
+      return { s: Math.round(mean(occ.map(function (o) { return o.s; }))), d: Math.round(mean(occ.map(function (o) { return o.d; }))), p: ps.length ? Math.round(mean(ps)) : null, n: occ.length };
+    }
+    if (days === 84) {
+      for (var w = 11; w >= 0; w--) {
+        var stop = addDays(end, -w * 7), start = addDays(stop, -6);
+        var inW = periodRecs(recs, 7, stop);
+        out.push({ label: md(start), title: md(start) + '〜' + md(stop) + '（週平均）',
+          am: val(inW.filter(function (r) { return r.slot === 'am'; })), pm: val(inW.filter(function (r) { return r.slot === 'pm'; })) });
+      }
+    } else {
+      for (var i = days - 1; i >= 0; i--) {
+        var date = addDays(end, -i);
+        out.push({ label: md(date), title: md(date) + '（' + dow(date) + '）',
+          am: recs[recId(date, 'am')] ? occasion(recs[recId(date, 'am')]) : null, pm: recs[recId(date, 'pm')] ? occasion(recs[recId(date, 'pm')]) : null });
+      }
+    }
+    return out;
+  }
+  var geom = null;
+  function drawChart() {
+    var el = $('chart'), W = Math.max(280, el.clientWidth || 640), H = W < 480 ? 270 : 320;
+    var m = { l: 38, r: 44, t: 12, b: 26 }, t = target();
+    var bs = chartBuckets = buckets(viewRecs(), S.days), n = bs.length;
+    var lo = 50, hi = 180;
+    bs.forEach(function (b) { [b.am, b.pm].forEach(function (v) { if (v) { if (v.s + 8 > hi) hi = v.s + 8; if (v.d - 8 < lo) lo = v.d - 8; } }); });
+    lo = Math.floor(lo / 20) * 20; hi = Math.ceil(hi / 20) * 20;
+    var y = function (v) { return m.t + (hi - v) / (hi - lo) * (H - m.t - m.b); };
+    var plotW = W - m.l - m.r, slot = plotW / n, bw = Math.max(2, Math.min(12, slot * 0.34));
+    var parts = [];
+    for (var v = lo; v <= hi; v += 10) {
+      var major = v % 20 === 0;
+      if (major) {
+        parts.push('<line class="grid" x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + y(v) + '" y2="' + y(v) + '"/>');
+        parts.push('<text class="axis-text" x="' + (m.l - 10) + '" y="' + (y(v) + 4) + '" text-anchor="end">' + v + '</text>');
+      }
+      parts.push('<line class="tick" x1="' + (m.l - (major ? 7 : 4)) + '" x2="' + m.l + '" y1="' + y(v) + '" y2="' + y(v) + '"/>');
+    }
+    if (S.hover >= 0 && S.hover < n) parts.push('<rect class="col-hl" x="' + (m.l + slot * S.hover) + '" y="' + m.t + '" width="' + slot + '" height="' + (H - m.t - m.b) + '"/>');
+    var step = S.days === 7 ? 1 : (S.days === 28 ? (W < 480 ? 7 : 4) : (W < 480 ? 3 : 2));
+    bs.forEach(function (b, i) {
+      var c = m.l + slot * (i + 0.5);
+      [['am', c - bw - 1], ['pm', c + 1]].forEach(function (a) {
+        var val = b[a[0]]; if (!val) return;
+        var top = y(val.s), h = Math.max(2, y(val.d) - top), rx = Math.min(4, bw / 2);
+        parts.push('<rect class="bar ' + a[0] + '" x="' + a[1].toFixed(1) + '" y="' + top.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="' + rx.toFixed(1) + '"/>');
+      });
+      if ((n - 1 - i) % step === 0) parts.push('<text class="axis-text" x="' + c + '" y="' + (H - 8) + '" text-anchor="middle">' + b.label + '</text>');
+    });
+    [t.s, t.d].forEach(function (v, i) {
+      parts.push('<line class="target-line" x1="' + m.l + '" x2="' + (W - m.r) + '" y1="' + y(v) + '" y2="' + y(v) + '"/>');
+      parts.push('<text class="target-text" x="' + (W - m.r + 4) + '" y="' + (y(v) + 4) + '">' + (i ? '下' : '上') + v + '</text>');
+    });
+    var tip = el.querySelector('.tip');
+    el.innerHTML = '<svg viewBox="0 0 ' + W + ' ' + H + '" aria-hidden="true">' + parts.join('') + '</svg>';
+    geom = { m: m, slot: slot, W: W, H: H, y: y };
+    if (S.hover >= 0 && S.hover < n) showTip(S.hover);
+  }
+  function showTip(i) {
+    var el = $('chart'), b = chartBuckets[i]; if (!b || !geom) return;
+    var fmt = function (v) { return v ? v.s + '/' + v.d + (v.p ? '　脈 ' + v.p : '') : '記録なし'; };
+    var tip = document.createElement('div');
+    tip.className = 'tip';
+    tip.innerHTML = '<b>' + esc(b.title) + '</b>朝 ' + fmt(b.am) + '<br>晩 ' + fmt(b.pm);
+    el.appendChild(tip);
+    var scale = el.clientWidth / geom.W;
+    var cx = (geom.m.l + geom.slot * (i + 0.5)) * scale, tw = tip.offsetWidth;
+    var left = cx + 12 + tw > el.clientWidth ? cx - tw - 12 : cx + 12;
+    tip.style.left = Math.max(0, left) + 'px'; tip.style.top = '14px';
+  }
+  function setHover(i) { if (i === S.hover) return; S.hover = i; drawChart(); }
+  var chartEl = $('chart');
+  function pointerIdx(e) {
+    if (!geom) return -1;
+    var r = chartEl.getBoundingClientRect(), x = (e.clientX - r.left) * geom.W / r.width;
+    var i = Math.floor((x - geom.m.l) / geom.slot);
+    return i >= 0 && i < chartBuckets.length ? i : -1;
+  }
+  chartEl.addEventListener('pointermove', function (e) { setHover(pointerIdx(e)); });
+  chartEl.addEventListener('pointerdown', function (e) { setHover(pointerIdx(e)); });
+  chartEl.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') setHover(-1); });
+  chartEl.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+      e.preventDefault();
+      var n = chartBuckets.length, cur = S.hover < 0 ? n - 1 : S.hover + (e.key === 'ArrowRight' ? 1 : -1);
+      setHover(Math.max(0, Math.min(n - 1, cur)));
+    } else if (e.key === 'Escape') setHover(-1);
+  });
+  chartEl.addEventListener('blur', function () { setHover(-1); });
+  if (window.ResizeObserver) { var lastW = 0; new ResizeObserver(function () { var w = chartEl.clientWidth; if (w !== lastW) { lastW = w; drawChart(); } }).observe(chartEl); }
+
+  /* ---------- 手帳 ---------- */
+  function cellHtml(rec, date, slot, sample) {
+    var t = target(), o = rec && occasion(rec), attr = sample ? ' disabled' : ' data-date="' + date + '" data-slot="' + slot + '"';
+    var label = md(date) + SLOT[slot];
+    if (!o) return '<button type="button" class="cell-btn empty"' + attr + ' aria-label="' + label + 'を入力">＋</button>';
+    var hi = o.s >= Math.max(HIGH.s, t.s) || o.d >= Math.max(HIGH.d, t.d);
+    return '<button type="button" class="cell-btn"' + attr + ' aria-label="' + label + ' ' + o.s + '/' + o.d + 'を修正"><span class="bp">' + o.s + '/' + o.d + (hi ? '<span class="mark">▲</span>' : '') + '</span>' +
+      '<span class="sub">' + (o.p ? '脈 ' + o.p : '脈 -') + (rec.time ? '・' + esc(rec.time) : '') + '</span></button>';
+  }
+  function renderBook() {
+    var recs = viewRecs(), sample = !hasReal(), list = periodRecs(recs, S.days, today()), dates = {};
+    list.forEach(function (r) { dates[r.date] = true; });
+    var keys = Object.keys(dates).sort().reverse();
+    if (sample) keys = keys.slice(0, 5);
+    var box = $('book');
+    if (!keys.length) { box.innerHTML = '<p class="empty-note">この期間の記録はありません。左の入力欄から記録できます。</p>'; return; }
+    var rows = keys.map(function (d) {
+      var am = recs[recId(d, 'am')], pm = recs[recId(d, 'pm')];
+      var notes = [am, pm].filter(Boolean).map(function (r) {
+        var bits = (r.tags || []).concat(r.memo ? [r.memo] : []);
+        return bits.length ? SLOT[r.slot] + '：' + bits.join('、') : '';
+      }).filter(Boolean).join('　');
+      return '<tr' + (notes ? ' class="has-memo"' : '') + '><td class="day-cell">' + md(d) + ' <span class="dow">' + dow(d) + '</span></td><td>' + cellHtml(am, d, 'am', sample) + '</td><td>' + cellHtml(pm, d, 'pm', sample) + '</td></tr>' +
+        (notes ? '<tr class="memo-row"><td colspan="3">' + esc(notes) + '</td></tr>' : '');
+    }).join('');
+    box.innerHTML = '<table><thead><tr><th scope="col">日付</th><th scope="col">朝</th><th scope="col">晩</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+  $('book').addEventListener('click', function (e) {
+    var b = e.target.closest('.cell-btn[data-date]'); if (!b) return;
+    S.dirty = false; goTo(b.dataset.date, b.dataset.slot);
+    if (window.matchMedia('(max-width: 880px)').matches) $('entry').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  /* ---------- 受診用まとめ ---------- */
+  function buildSummary() {
+    var recs = viewRecs(), t = target(), end = today(), days = S.days, list = periodRecs(recs, days, end);
+    var am = slotStats(list, 'am', t), pm = slotStats(list, 'pm', t), L = [];
+    L.push('血圧ノート まとめ（' + md(addDays(end, -days + 1)) + '〜' + md(end) + '）');
+    if (S.settings.name) L.push('名前：' + S.settings.name);
+    if (S.settings.meds) L.push('飲んでいる薬：' + S.settings.meds);
+    L.push('家庭血圧の目標：' + t.s + '/' + t.d + ' mmHg未満');
+    [['朝', am], ['晩', pm]].forEach(function (a) {
+      var st = a[1];
+      L.push(st.n ? a[0] + 'の平均：' + st.s + '/' + st.d + ' mmHg' + (st.p ? '、脈拍 ' + st.p : '') + '（' + st.n + '日分、最高 ' + st.maxS + '/' + st.maxD + '）' : a[0] + 'の平均：記録なし');
+    });
+    var counts = {};
+    list.forEach(function (r) { (r.tags || []).forEach(function (x) { counts[x] = (counts[x] || 0) + 1; }); });
+    var tagText = Object.keys(counts).map(function (k) { return k + ' ' + counts[k] + '回'; }).join('、');
+    if (tagText) L.push('様子：' + tagText);
+    var memos = list.filter(function (r) { return r.memo; }).sort(function (a, b) { return a.date < b.date ? 1 : -1; }).slice(0, 8).map(function (r) { return md(r.date) + SLOT[r.slot] + '：' + r.memo; });
+    if (memos.length) { L.push('メモ：'); memos.forEach(function (m) { L.push('・' + m); }); }
+    return L.join('\n');
+  }
+  function buildCsv() {
+    var head = ['日付', '時間帯', '時刻', '上1', '下1', '脈1', '上2', '下2', '脈2', '上平均', '下平均', '脈平均', '様子', 'メモ'];
+    var cell = function (v) { v = v == null ? '' : String(v); if (/^[=+\-@\t\r]/.test(v)) v = "'" + v; return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+    var rows = Object.keys(S.recs).map(function (k) { return S.recs[k]; }).sort(function (a, b) { return (a.date + a.slot).localeCompare(b.date + b.slot); }).map(function (r) {
+      var o = occasion(r) || {}, a = r.r[0] || {}, b = r.r[1] || {};
+      return [r.date, SLOT[r.slot], r.time, a.s, a.d, a.p, b.s, b.d, b.p, o.s, o.d, o.p, (r.tags || []).join(' '), r.memo].map(cell).join(',');
+    });
+    return '﻿' + [head.join(',')].concat(rows).join('\r\n') + '\r\n';
+  }
+  $('copy-btn').addEventListener('click', function () {
+    var text = $('summary').textContent, msg = $('action-msg');
+    var ok = function () { msg.textContent = 'コピーしました。'; };
+    var fail = function () {
+      var r = document.createRange(); r.selectNodeContents($('summary'));
+      var sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+      msg.textContent = 'コピーできなかったので、文章を選択しました。長押しまたは右クリックでコピーしてください。';
+    };
+    try { navigator.clipboard.writeText(text).then(ok, fail); } catch (e) { fail(); }
+  });
+  $('csv-btn').addEventListener('click', function () {
+    var msg = $('action-msg'), name = 'bp-note_' + today() + '.csv';
+    var blob = new Blob([buildCsv()], { type: 'text/csv' });
+    var file = null;
+    try { file = new File([blob], name, { type: 'text/csv' }); } catch (e) { file = null; }
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file], title: '血圧ノート' }).then(function () { msg.textContent = 'CSVを書き出しました。'; }, function (e) {
+        if (e && e.name === 'AbortError') msg.textContent = ''; else download();
+      });
+    } else download();
+    function download() {
+      var url = URL.createObjectURL(blob), a = document.createElement('a');
+      a.href = url; a.download = name; document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+      msg.textContent = 'CSVを保存しました。';
+    }
+  });
+
+  function parseCsv(text) {
+    var rows = [], row = [], cur = '', q = false;
+    text = text.replace(/^\uFEFF/, '');
+    for (var i = 0; i < text.length; i++) {
+      var c = text[i];
+      if (q) { if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; } else cur += c; }
+      else if (c === '"') q = true;
+      else if (c === ',') { row.push(cur); cur = ''; }
+      else if (c === '\n' || c === '\r') { if (c === '\r' && text[i + 1] === '\n') i++; row.push(cur); rows.push(row); row = []; cur = ''; }
+      else cur += c;
+    }
+    if (cur !== '' || row.length) { row.push(cur); rows.push(row); }
+    return rows.filter(function (r) { return r.some(function (x) { return x !== ''; }); });
+  }
+  function importCsv(text) {
+    var rows = parseCsv(text), head = rows.shift() || [], col = {};
+    head.forEach(function (h, i) { col[h.trim()] = i; });
+    if (col['日付'] == null || col['時間帯'] == null || col['上1'] == null) throw new Error('format');
+    var get = function (r, k) { var v = col[k] == null ? '' : (r[col[k]] || '').trim(); return /^'[=+\-@]/.test(v) ? v.slice(1) : v; };
+    var n = function (r, k) { var v = Number(get(r, k)); return get(r, k) === '' || !isFinite(v) ? null : v; };
+    var count = 0;
+    rows.forEach(function (r) {
+      var date = get(r, '日付'), slot = get(r, '時間帯') === '朝' ? 'am' : (get(r, '時間帯') === '晩' ? 'pm' : null);
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !slot) return;
+      var rs = [];
+      [1, 2].forEach(function (k) { var s = n(r, '上' + k), d = n(r, '下' + k); if (s && d) rs.push({ s: s, d: d, p: n(r, '脈' + k) }); });
+      if (!rs.length) return;
+      var tags = get(r, '様子'); 
+      var id = recId(date, slot);
+      S.recs[id] = { date: date, slot: slot, time: get(r, '時刻'), r: rs, tags: tags ? tags.split(/\s+/) : [], memo: get(r, 'メモ'), updatedAt: Date.now() };
+      count++;
+    });
+    return count;
+  }
+  $('csv-in').addEventListener('change', function () {
+    var f = this.files && this.files[0], msg = $('action-msg'), input = this;
+    if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function () {
+      try {
+        var c = importCsv(String(rd.result));
+        persist(); renderData(); loadForm();
+        msg.textContent = c ? c + '件の記録を読み込みました。同じ日の同じ時間帯は、読み込んだ記録で上書きしました。' : '読み込める記録がありませんでした。このノートで保存したCSVを選んでください。';
+      } catch (e) { msg.textContent = 'このファイルは読み込めませんでした。このノートで保存したCSVを選んでください。'; }
+      input.value = '';
+    };
+    rd.onerror = function () { msg.textContent = 'ファイルを開けませんでした。もう一度選んでください。'; input.value = ''; };
+    rd.readAsText(f, 'utf-8');
+  });
+
+  /* ---------- 設定 ---------- */
+  function fillSettings() {
+    [['set-name', 'name'], ['set-meds', 'meds'], ['set-ts', 'ts'], ['set-td', 'td']].forEach(function (a) {
+      var el = $(a[0]); if (document.activeElement !== el) el.value = S.settings[a[1]] == null ? '' : S.settings[a[1]];
+    });
+  }
+  function saveSettings() {
+    var clamp = function (v, lo, hi, dflt) { v = Number(v); return v >= lo && v <= hi ? Math.round(v) : dflt; };
+    S.settings = { name: $('set-name').value.trim(), meds: $('set-meds').value.trim(), ts: clamp($('set-ts').value, 100, 160, DEFAULT_TARGET.s), td: clamp($('set-td').value, 60, 100, DEFAULT_TARGET.d) };
+    S.settingsDirty = true; persist(); fillSettings(); renderData(); updateLive(); flush();
+  }
+  ['set-name', 'set-meds', 'set-ts', 'set-td'].forEach(function (id) { $(id).addEventListener('change', saveSettings); });
+
+  /* ---------- 期間 ---------- */
+  document.querySelectorAll('.period button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      S.days = Number(b.dataset.days); S.hover = -1;
+      document.querySelectorAll('.period button').forEach(function (x) { x.setAttribute('aria-pressed', x === b ? 'true' : 'false'); });
+      renderData();
+    });
+  });
+
+  /* ---------- 描画 ---------- */
+  function renderData() {
+    var sample = !hasReal(), t = target(), list = periodRecs(viewRecs(), S.days, today());
+    var am = slotStats(list, 'am', t), pm = slotStats(list, 'pm', t);
+    $('sample-note').hidden = !sample;
+    $('stats').innerHTML = statHtml('am', am) + statHtml('pm', pm);
+    $('guidance').textContent = sample ? '自分の記録が5日分たまると、ここに目安が表示されます。' : guidance(am, pm, t);
+    $('legend-target').textContent = '目標 ' + t.s + '/' + t.d + ' 未満';
+    $('legend-note').textContent = S.days === 84 ? '棒は週平均。上端が上の血圧、下端が下の血圧' : '棒の上端が上の血圧、下端が下の血圧';
+    chartEl.setAttribute('aria-label', '朝と晩の血圧の推移。朝の平均 ' + (am.n ? am.s + '/' + am.d : '記録なし') + '、晩の平均 ' + (pm.n ? pm.s + '/' + pm.d : '記録なし') + '。左右の矢印キーで日ごとの値を確認できます。');
+    drawChart(); renderBook();
+    $('summary').textContent = sample ? '（見本）\n' + buildSummary() : buildSummary();
+    $('copy-btn').disabled = sample;
+    $('csv-btn').disabled = sample;
+  }
+
+  fillSettings(); loadForm(); renderData(); setSaveState();
+  S.mode = 'device'; setSaveState();
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) { /* 対応していない端末では何もしない */ }
+  if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost')) {
+    navigator.serviceWorker.register('sw.js').catch(function () { /* 登録できなくても通信ありなら動く */ });
+  }
+})();
+</script>
+</body>
+</html>
